@@ -410,7 +410,7 @@ q.onblur=()=>app.classList.remove('typing');
 function flash(text,canUndo){$('#ctext').textContent=text;$('#undo').style.display=canUndo?'':'none';app.classList.add('logged');clearTimeout(tl);tl=setTimeout(()=>app.classList.remove('logged'),2800)}
 
 $('#bar').onsubmit=async ev=>{ev.preventDefault();const t=q.value.trim();if(!t)return;
- q.value='';mir.textContent='';$('#cat').classList.remove('show');q.blur();
+ q.value='';mir.textContent='';$('#cat').classList.remove('show');q.blur();app.style.setProperty('--kb','0px');
  const p=asEntry(t);if(!p){if(isQ(t))return answer(t);return flash('Añade un monto, como “tinto 4.500”',false)}
  
  // Anomaly Detection
@@ -429,7 +429,7 @@ $('#undo').onclick=async()=>{if(last){await del(last.id);last=null;await refresh
 
 function answer(t){const r=ask(entries,t);const s=t.replace(/[¿?]/g,'').trim();
  const isQuestion=/^(que|cual|cuales|cuanto|cuanta|cuantos|cuantas|donde|cuando|como)\b/.test(norm(s));
- lab.textContent=cap(s)+(isQuestion?'?':'')+'';setNum(r.total);
+ lab.textContent=cap(s)+(isQuestion?'?':'');setNum(r.total);
  const ks=Object.keys(r.by).sort((a,b)=>r.by[b]-r.by[a]),pct=k=>r.total>0?Math.round(r.by[k]/r.total*100):0;
  seg.innerHTML=ks.map(k=>`<span style="background:${CAT[k].color}"></span>`).join('');
  segcap.textContent=ks.length?ks.slice(0,4).map(k=>CAT[k].label+' '+pct(k)+'%').join(' · '):r.note||(r.label+' · '+r.n+(r.n===1?' gasto':' gastos'));
@@ -439,6 +439,9 @@ function resetAnswer(){clearTimeout(ta);app.classList.remove('answer');month()}
 
 let y0=null,open=false,p0=0,moved=false;const H=()=>$('#sheet').offsetHeight;
 app.addEventListener('pointerdown',e=>{if(e.target.closest('form')||(open&&!e.target.closest('.grab')))return;y0=e.clientY;p0=open?1:0;moved=false});
+// Tocar fuera del campo cierra el teclado y, sobre todo, libera el hueco de --kb
+// (iOS no siempre dispara blur al tocar el fondo).
+app.addEventListener('pointerdown',e=>{if(document.activeElement===q&&!e.target.closest('form')&&!e.target.closest('#cat')){q.blur();app.style.setProperty('--kb','0px')}});
 app.addEventListener('pointermove',e=>{if(y0===null)return;const dy=e.clientY-y0;if(!moved&&Math.abs(dy)<8)return;
  if(!moved){moved=true;app.classList.add('drag');app.setPointerCapture(e.pointerId)}
  app.style.setProperty('--p',Math.min(1,Math.max(0,p0-dy/H())))});
@@ -446,12 +449,22 @@ app.addEventListener('pointerup',()=>{if(y0===null)return;y0=null;if(!moved)retu
  open=parseFloat(getComputedStyle(app).getPropertyValue('--p'))>.4;app.style.setProperty('--p',open?1:0);app.classList.toggle('sheet-on',open)});
 $('#grab').onclick=()=>{if(moved)return;open=!open;app.style.setProperty('--p',open?1:0);app.classList.toggle('sheet-on',open)};
 const vv=window.visualViewport;
-if(vv){const k=()=>app.style.setProperty('--kb',Math.max(0,innerHeight-vv.height-vv.offsetTop)+'px');
+if(vv){
+ // Solo levantamos la barra mientras el campo tiene el foco. Si el teclado se cierra,
+ // iOS a veces deja visualViewport "encogido": sin este candado queda un hueco negro.
+ const isFocus=()=>document.activeElement===q;
+ const k=()=>{const raw=innerHeight-vv.height-vv.offsetTop;
+  app.style.setProperty('--kb',isFocus()&&raw>80?Math.round(raw)+'px':'0px')};
+ const zero=()=>{if(!isFocus())app.style.setProperty('--kb','0px')};
  vv.addEventListener('resize',k);vv.addEventListener('scroll',k);
  // iOS no siempre dispara resize al abrir/cerrar el teclado: recalcular con retardo
  q.addEventListener('focus',()=>{k();setTimeout(k,250);setTimeout(k,500)});
- q.addEventListener('blur',()=>{setTimeout(k,200);setTimeout(k,450)});
- addEventListener('orientationchange',()=>setTimeout(k,300));}
+ q.addEventListener('blur',()=>{zero();setTimeout(zero,0);setTimeout(zero,250);setTimeout(zero,600)});
+ addEventListener('orientationchange',()=>setTimeout(k,300));
+ addEventListener('pageshow',()=>{if(!isFocus())app.style.setProperty('--kb','0px')});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)app.style.setProperty('--kb','0px')});
+ k();
+}
 
 async function sync(){const u=entries.filter(e=>e.synced===0);for(const e of u){e.synced=1;await put(e)}refresh()}
 addEventListener('online',sync);addEventListener('offline',renderList);
